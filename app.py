@@ -12,6 +12,12 @@ from processing import (
 )
 from processing.segmentador import load_segmentation_model, preprocess_image, postprocess_mask, dice_score, iou_score, segment_image
 
+from processing.clasificacion import (
+    load_classification_model,
+    classify_image
+)
+
+
 
 # ==============================
 # Configuración
@@ -21,6 +27,10 @@ SEG_IMG_SIZE = 256
 
 st.set_page_config(page_title="Interfaz de Filtrado y Segmentación", layout="wide")
 st.title("Interfaz de Filtrado y Segmentación de Imágenes")
+
+CLS_MODEL_PATH = "modelos/algoritmo_clasificador.h5"
+CLASS_NAMES = ["Clase 0", "Clase 1", "Clase 2", "Clase 3"]
+
 
 
 # ==============================
@@ -36,9 +46,23 @@ def load_model_cached():
 
 model_seg = load_model_cached()
 
+@st.cache_resource
+def load_classifier_cached():
+    try:
+        return load_classification_model(CLS_MODEL_PATH)
+    except Exception as e:
+        st.error(f"Error cargando el modelo de clasificación: {e}")
+        return None
+
+model_cls = load_classifier_cached()
+
+
 
 # Tabs
-tab1, tab2 = st.tabs(["🟦 Procesamiento", "🟥 Segmentación"])
+tab1, tab2, tab3 = st.tabs(
+    ["🟦 Procesamiento", "🟥 Segmentación", "🟩 Clasificación"]
+)
+
 
 
 
@@ -202,3 +226,43 @@ with tab2:
             file_name="segmentation_mask.png",
             mime="image/png"
         )
+
+# =============================================================================
+# 🟩 TAB 3 — CLASIFICACIÓN
+# =============================================================================
+with tab3:
+
+    uploaded_cls = st.file_uploader(
+        "Selecciona una imagen para clasificar",
+        type=["png", "jpg", "jpeg"],
+        key="cls"
+    )
+
+    if model_cls is None:
+        st.error("❌ El modelo de clasificación no está cargado.")
+    else:
+        st.success("✅ Modelo de clasificación cargado correctamente.")
+
+    if uploaded_cls is not None and model_cls is not None:
+
+        pil_img = Image.open(uploaded_cls).convert("L")
+        image_np = np.array(pil_img)
+
+        st.subheader("Imagen Original")
+        st.image(image_np, clamp=True)
+
+        try:
+            class_idx, probs = classify_image(model_cls, image_np)
+
+            st.subheader("Resultado de Clasificación")
+            st.write(f"**Clase predicha:** {CLASS_NAMES[class_idx]}")
+
+            st.subheader("Probabilidades")
+            for name, p in zip(CLASS_NAMES, probs):
+                st.write(f"{name}: {p:.4f}")
+                st.progress(float(p))
+
+        except Exception as e:
+            import traceback
+            st.error("ERROR EN CLASIFICACIÓN")
+            st.code(traceback.format_exc())

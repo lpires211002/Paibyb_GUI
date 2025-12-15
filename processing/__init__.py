@@ -8,14 +8,23 @@ from .segmentador import (
     iou_score
 )
 
+from .clasificacion import (
+    load_classification_model,
+    classify_image
+)
+
 __all__ = [
     "process_single_image",
     "process_nlm_pipeline",
+
+    # Segmentación
     "load_segmentation_model",
     "segment_image",
     "dice_score",
-    "iou_score"
+    "iou_score",
+
+    # Clasificación
+    "load_classification_model",
+    "classify_image"
 ]
-
-
 
