@@ -117,8 +117,7 @@ st.markdown("""
     }
     
     .stDownloadButton > button {
-        background-color: #1a1a1a;
-        color: white;
+        background-color: #1a1a1a !important;
         border: none;
         padding: 0.75rem 2rem;
         font-weight: 500;
@@ -126,17 +125,27 @@ st.markdown("""
         transition: all 0.3s ease;
         width: 100%;
     }
-    
+
+    .stDownloadButton > button span {
+        color: white !important;
+    }
+
     .stDownloadButton > button:hover {
-        background-color: #2a2a2a;
+        background-color: #2a2a2a !important;
         transform: translateY(-1px);
     }
+
+    .stDownloadButton > button:hover span {
+        color: white !important;
+    }
+
     
     /* Selectbox y Slider */
     .stSelectbox > div > div {
         background-color: white;
         border: 1px solid #d0d0d0;
         border-radius: 4px;
+        color: #1a1a1a;
     }
     
     .stSlider {
@@ -206,11 +215,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("RESEDA")
+st.title("Interfaz de Procesamiento Avanzado de Imágenes Médicas")
+st.subheader("Magdalena La Valle - Luca Pires")
 st.markdown("##### Procesamiento y análisis de imágenes médicas")
 
 CLS_MODEL_PATH = "modelos/algoritmo_clasificador.h5"
-CLASS_NAMES = ["Clase 0", "Clase 1", "Clase 2", "Clase 3"]
+CLASS_NAMES = ["Glioma", "Meningioma", "Sin Tumor", "Pituitaria"]
 
 # ==============================
 # Cargar modelo de segmentación
