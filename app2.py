@@ -4,45 +4,48 @@ import cv2
 from PIL import Image
 import io
 import tensorflow as tf
-import processing
 
 from processing import (
     process_single_image,
     process_nlm_pipeline,
-)
-from processing.segmentador import load_segmentation_model, preprocess_image, postprocess_mask, dice_score, iou_score, segment_image
-
-from processing.clasificacion import (
+    load_segmentation_model,
+    segment_image,
+    dice_score,
+    iou_score,
     load_classification_model,
-    classify_image
+    classify_image,
+    # Nuevas importaciones para extracción
+    apply_harris,
+    apply_sift,
+    apply_orb,
+    extraer_todas_caracteristicas,
+    dibujar_contorno
 )
 
 # ==============================
 # Configuración
 # ==============================
 SEG_MODEL_PATH = "modelos/segmentation.h5"
-SEG_IMG_SIZE = 256
+CLS_MODEL_PATH = "modelos/algoritmo_clasificador.h5"
+CLASS_NAMES = ["Glioma", "Meningioma", "Sin Tumor", "Pituitaria"]
 
-st.set_page_config(page_title="Procesamiento de Imágenes", layout="wide")
+st.set_page_config(page_title="UI Procesamiento avanzado de imágenes médicas", layout="wide")
 
 # ==============================
 # CSS Personalizado - Estilo Reseda
 # ==============================
 st.markdown("""
 <style>
-    /* Fuentes y estilo general */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Fondo y contenedor principal */
     .stApp {
         background-color: #fafafa;
     }
     
-    /* Título principal */
     h1 {
         font-size: 4.5rem !important;
         font-weight: 700 !important;
@@ -52,7 +55,6 @@ st.markdown("""
         text-transform: uppercase;
     }
     
-    /* Subtítulos */
     h2, h3 {
         font-weight: 600 !important;
         color: #2a2a2a !important;
@@ -60,7 +62,6 @@ st.markdown("""
         margin-top: 2rem !important;
     }
     
-    /* Tabs estilizados */
     .stTabs [data-baseweb="tab-list"] {
         gap: 2rem;
         border-bottom: 1px solid #e0e0e0;
@@ -82,7 +83,6 @@ st.markdown("""
         border-bottom: 2px solid #1a1a1a;
     }
     
-    /* File uploader */
     [data-testid="stFileUploader"] {
         background-color: white;
         border: 2px dashed #d0d0d0;
@@ -96,7 +96,6 @@ st.markdown("""
         background-color: #f8f8f8;
     }
     
-    /* Botones */
     .stButton > button {
         background-color: #1a1a1a;
         color: white;
@@ -117,7 +116,8 @@ st.markdown("""
     }
     
     .stDownloadButton > button {
-        background-color: #1a1a1a !important;
+        background-color: #1a1a1a;
+        color: white;
         border: none;
         padding: 0.75rem 2rem;
         font-weight: 500;
@@ -125,53 +125,38 @@ st.markdown("""
         transition: all 0.3s ease;
         width: 100%;
     }
-
-    .stDownloadButton > button span {
-        color: white !important;
-    }
-
+    
     .stDownloadButton > button:hover {
-        background-color: #2a2a2a !important;
+        background-color: #2a2a2a;
         transform: translateY(-1px);
     }
-
-    .stDownloadButton > button:hover span {
-        color: white !important;
-    }
-
     
-    /* Selectbox y Slider */
     .stSelectbox > div > div {
-        background-color: white;
+        background-color: #666666;
         border: 1px solid #d0d0d0;
         border-radius: 4px;
-        color: #1a1a1a;
     }
     
     .stSlider {
         padding: 1rem 0;
     }
     
-    /* Métricas */
     [data-testid="stMetricValue"] {
         font-size: 2rem;
         font-weight: 600;
         color: #1a1a1a;
     }
     
-    /* Progress bar */
     .stProgress > div > div {
         background-color: #1a1a1a;
     }
     
-    /* Imágenes */
     [data-testid="stImage"] {
         border-radius: 4px;
         overflow: hidden;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
-    /* Info boxes */
     .stAlert {
         background-color: white;
         border-left: 4px solid #1a1a1a;
@@ -179,14 +164,12 @@ st.markdown("""
         padding: 1rem;
     }
     
-    /* Divider */
     hr {
         margin: 2rem 0;
         border: none;
         border-top: 1px solid #e0e0e0;
     }
     
-    /* Cards/containers */
     div[data-testid="column"] {
         background-color: white;
         padding: 1.5rem;
@@ -194,13 +177,11 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
     
-    /* Text */
     p {
         color: #4a4a4a;
         line-height: 1.6;
     }
     
-    /* Success/Error messages */
     .stSuccess {
         background-color: #f0f8f0;
         color: #2d5f2d;
@@ -215,15 +196,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Interfaz de Procesamiento Avanzado de Imágenes Médicas")
-st.subheader("Magdalena La Valle - Luca Pires")
+st.title("Procesamiento Avanzado de Imágenes Médicas UI")
+st.subheader("Luca Pires - Magdalena La Valle")
 st.markdown("##### Procesamiento y análisis de imágenes médicas")
 
-CLS_MODEL_PATH = "modelos/algoritmo_clasificador.h5"
-CLASS_NAMES = ["Glioma", "Meningioma", "Sin Tumor", "Pituitaria"]
-
 # ==============================
-# Cargar modelo de segmentación
+# Cargar modelos
 # ==============================
 @st.cache_resource
 def load_model_cached():
@@ -246,8 +224,8 @@ def load_classifier_cached():
 model_cls = load_classifier_cached()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(
-    ["PROCESAMIENTO", "SEGMENTACIÓN", "CLASIFICACIÓN"]
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["PROCESAMIENTO", "SEGMENTACIÓN", "CLASIFICACIÓN", "EXTRACCIÓN DE CARACTERÍSTICAS"]
 )
 
 # =============================================================================
@@ -422,19 +400,16 @@ with tab3:
 
     if uploaded_cls is not None and model_cls is not None:
         try:
-            # Leer la imagen y convertir a escala de grises
             pil_img = Image.open(uploaded_cls).convert("L")
             image_np = np.array(pil_img, dtype=np.uint8)
             
             st.subheader("Imagen Original")
             st.image(image_np, clamp=True, width=300)
 
-            # Clasificar la imagen
             class_idx, probs = classify_image(model_cls, image_np)
 
             st.divider()
             
-            # Mostrar resultado principal
             st.subheader("Resultado de Clasificación")
             col1, col2 = st.columns([1, 2])
             
@@ -447,7 +422,6 @@ with tab3:
             
             with col2:
                 st.write("**Distribución de Probabilidades:**")
-                # Crear una visualización más clara de las probabilidades
                 for i, (name, p) in enumerate(zip(CLASS_NAMES, probs)):
                     col_a, col_b = st.columns([3, 1])
                     with col_a:
@@ -459,7 +433,135 @@ with tab3:
             import traceback
             st.error("ERROR EN CLASIFICACIÓN")
             st.code(traceback.format_exc())
-            st.write("**Tipo de image_np:**", type(image_np) if 'image_np' in locals() else "No definido")
-            if 'image_np' in locals() and isinstance(image_np, np.ndarray):
-                st.write("**Shape:**", image_np.shape)
-                st.write("**Dtype:**", image_np.dtype)
+
+# =============================================================================
+# TAB 4 — EXTRACCIÓN DE CARACTERÍSTICAS
+# =============================================================================
+with tab4:
+    st.markdown("### Extracción de Características")
+    
+    col_upload1, col_upload2 = st.columns(2)
+    
+    with col_upload1:
+        uploaded_extract_img = st.file_uploader(
+            "Imagen original",
+            type=["png", "jpg", "jpeg"],
+            key="extract_img"
+        )
+    
+    with col_upload2:
+        uploaded_extract_mask = st.file_uploader(
+            "Máscara segmentada",
+            type=["png", "jpg", "jpeg"],
+            key="extract_mask"
+        )
+    
+    # Selector de método de extracción
+    metodo_extraccion = st.selectbox(
+        "Método de detección",
+        ["Harris (Esquinas)", "SIFT (Características)", "ORB (Características)", "Métricas Geométricas"],
+        key="metodo_extract"
+    )
+    
+    if uploaded_extract_img is not None:
+        # Cargar imagen original
+        pil_img = Image.open(uploaded_extract_img).convert("L")
+        img_original = np.array(pil_img, dtype=np.uint8)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Imagen Original")
+            st.image(img_original, clamp=True)
+        
+        # Aplicar detector seleccionado
+        if metodo_extraccion == "Harris (Esquinas)":
+            try:
+                img_features = apply_harris(img_original)
+                with col2:
+                    st.subheader("Detección Harris")
+                    st.image(img_features, clamp=True, channels="BGR")
+                    st.caption("Esquinas detectadas en rojo")
+            except Exception as e:
+                st.error(f"Error aplicando Harris: {e}")
+        
+        elif metodo_extraccion == "SIFT (Características)":
+            try:
+                img_features = apply_sift(img_original)
+                with col2:
+                    st.subheader("Detección SIFT")
+                    st.image(img_features, clamp=True, channels="BGR")
+                    st.caption("Keypoints SIFT en verde")
+            except Exception as e:
+                st.error(f"Error aplicando SIFT: {e}")
+        
+        elif metodo_extraccion == "ORB (Características)":
+            try:
+                img_features = apply_orb(img_original)
+                with col2:
+                    st.subheader("Detección ORB")
+                    st.image(img_features, clamp=True, channels="BGR")
+                    st.caption("Keypoints ORB en azul")
+            except Exception as e:
+                st.error(f"Error aplicando ORB: {e}")
+        
+        elif metodo_extraccion == "Métricas Geométricas":
+            if uploaded_extract_mask is not None:
+                try:
+                    # Cargar máscara
+                    pil_mask = Image.open(uploaded_extract_mask).convert("L")
+                    img_mask = np.array(pil_mask, dtype=np.uint8)
+                    
+                    # Binarizar máscara si es necesario
+                    if img_mask.max() > 1:
+                        img_mask = (img_mask > 127).astype(np.uint8) * 255
+                    
+                    with col2:
+                        st.subheader("Máscara Segmentada")
+                        st.image(img_mask, clamp=True)
+                    
+                    st.divider()
+                    
+                    # Extraer todas las características
+                    features = extraer_todas_caracteristicas(img_mask, img_original)
+                    
+                    # Mostrar contorno
+                    if features['contorno'] is not None:
+                        img_contorno = dibujar_contorno(img_mask, features['contorno'])
+                        st.subheader("Contorno Principal")
+                        st.image(img_contorno, clamp=True, channels="BGR")
+                    
+                    # Mostrar métricas
+                    st.subheader("Métricas Geométricas")
+                    
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        st.metric("Circularidad", f"{features['circularidad']:.3f}" if not np.isnan(features['circularidad']) else "N/A")
+                        st.metric("Extensión", f"{features['extension']:.3f}" if not np.isnan(features['extension']) else "N/A")
+                    
+                    with col_m2:
+                        st.metric("Solidez", f"{features['solidez']:.3f}" if not np.isnan(features['solidez']) else "N/A")
+                        st.metric("Elongación", f"{features['elongacion']:.3f}" if not np.isnan(features['elongacion']) else "N/A")
+                    
+                    with col_m3:
+                        st.metric("Compacidad", f"{features['compacidad']:.3f}" if not np.isnan(features['compacidad']) else "N/A")
+                        st.metric("Relación Áreas", f"{features['relacion_areas']:.3f}")
+                    
+                    st.divider()
+                    
+                    st.subheader("Información de Áreas")
+                    col_a1, col_a2 = st.columns(2)
+                    with col_a1:
+                        st.metric("Área del Tumor", f"{features['area_tumor']} px²")
+                    with col_a2:
+                        st.metric("Área del Cráneo", f"{features['area_craneo']} px²")
+                    
+                except Exception as e:
+                    import traceback
+                    st.error("Error extrayendo características:")
+                    st.code(traceback.format_exc())
+            else:
+                st.info("Para calcular métricas geométricas, sube también la máscara segmentada.")
+    
+    else:
+        st.info("Sube una imagen para comenzar la extracción de características.")
